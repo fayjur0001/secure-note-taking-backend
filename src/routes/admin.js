@@ -39,10 +39,9 @@ router.put('/users/:id', async (req, res) => {
   if (id.equals(req.user.id) && updates.role && updates.role !== 'admin') {
     throw new HttpError(400, 'You cannot remove your own admin role');
   }
-  const user = await User.findById(id);
+  await User.prepareUpdate(updates); // hashes password if present
+  const user = await User.findByIdAndUpdate(id, { $set: updates }, { returnDocument: 'after', runValidators: true });
   if (!user) throw new HttpError(404, 'User not found');
-  Object.assign(user, updates);
-  await user.save(); // runs validators + password hashing hook
   res.json({ user });
 });
 

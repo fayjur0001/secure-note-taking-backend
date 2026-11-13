@@ -32,9 +32,12 @@ router.get('/me', authenticate, async (req, res) => {
 
 // PATCH /api/auth/me — update own name / interests / password (never role)
 router.patch('/me', authenticate, async (req, res) => {
-  const user = await User.findById(req.user.id);
-  Object.assign(user, pick(req.body, ['name', 'interests', 'password']));
-  await user.save(); // pre('save') re-hashes the password if it changed
+  const updates = await User.prepareUpdate(pick(req.body, ['name', 'interests', 'password']));
+  const user = await User.findByIdAndUpdate(
+    req.user.id,
+    { $set: updates },
+    { returnDocument: 'after', runValidators: true }
+  );
   res.json({ user });
 });
 

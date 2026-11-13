@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const config = require('../config');
+const { HttpError } = require('../utils/http');
 
 const ROLES = ['user', 'admin'];
 
@@ -46,6 +47,21 @@ userSchema.pre('save', async function hashPassword() {
   if (!this.isModified('password')) return;
   this.password = await bcrypt.hash(this.password, config.bcryptRounds);
 });
+
+/**
+ * Updates go through atomic findByIdAndUpdate($set) instead of load + save(),
+ * so concurrent edits of the same user can't fail with a VersionError.
+ * The pre('save') hook doesn't run for updates, so hash the password here.
+ */
+userSchema.statics.prepareUpdate = async function prepareUpdate(updates) {
+  if (updates.password !== undefined) {
+    if (typeof updates.password !== 'string' || updates.password.length < 8) {
+      throw new HttpError(400, 'Password must be at least 8 characters');
+    }
+    updates.password = await bcrypt.hash(updates.password, config.bcryptRounds);
+  }
+  return updates;
+};
 
 userSchema.methods.comparePassword = function comparePassword(plain) {
   return bcrypt.compare(plain, this.password);
