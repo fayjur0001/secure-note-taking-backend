@@ -1,0 +1,39 @@
+# Self-hosted deploy (one container: API + static frontend on the same origin).
+#
+# Layout on the server:
+#   /opt/secure-notes/            <- this backend repo (git archive)
+#   /opt/secure-notes/frontend/   <- frontend repo (git archive)
+#   /opt/secure-notes/.env        <- secrets, created on the server, never committed
+#
+# Always run with an explicit project name:
+#   docker compose -p secure-notes -f /opt/secure-notes/compose.yaml up -d
+name: secure-notes
+
+services:
+  api:
+    build: .
+    image: secure-notes-api:latest
+    container_name: secure-notes-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "3000"
+      STATIC_DIR: /srv/frontend
+    ports:
+      - "8096:3000"
+    volumes:
+      - ./frontend:/srv/frontend:ro
+      # same-origin deploy: the frontend calls /api on this host
+      - ./deploy/web-config.js:/srv/frontend/config.js:ro
+    mem_limit: 256m
+    networks:
+      - secure-notes-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  secure-notes-net:
+    name: secure-notes-net

@@ -1,0 +1,7 @@
+node_modules
+.env
+.git
+frontend
+deploy
+compose.yaml
+README.md

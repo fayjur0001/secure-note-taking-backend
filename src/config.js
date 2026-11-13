@@ -8,6 +8,8 @@ const config = {
   bcryptRounds: 12,
   // comma-separated list, e.g. "https://my-notes.netlify.app,http://localhost:5173"; "*" allows any
   corsOrigins: (process.env.CORS_ORIGIN || '*').split(',').map((s) => s.trim()),
+  // directory with the frontend's static files (set only in the Docker deploy)
+  staticDir: process.env.STATIC_DIR || '',
 };
 
 if (!config.jwtSecret) {
