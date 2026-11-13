@@ -3,8 +3,15 @@
 Node.js + Express 5 + MongoDB (Mongoose) + JWT. Note-taking API with role-based access control,
 a minimal set of indexes, and two aggregation pipelines.
 
-- **Live API:** `<add Render URL here>`
-- **Frontend repo / live site:** `<add links here>`
+| | |
+|---|---|
+| Live app (frontend) | http://150.241.228.137:8096 |
+| Live API | http://150.241.228.137:8096/api (health check: [`/health`](http://150.241.228.137:8096/health)) |
+| Backend repo | https://github.com/fayjur0001/secure-note-taking-backend |
+| Frontend repo | https://github.com/fayjur0001/secure-note-taking-frontend |
+
+The frontend and the API are served from the same VPS on the same origin (see [Deployment](#deployment)).
+Admin credentials for testing are in the submission email.
 
 ## Run locally
 
@@ -18,9 +25,26 @@ npm run dev                 # http://localhost:3000
 Public registration always creates a `user`. Admins are created with `npm run create-admin`
 or by another admin through the API.
 
+To also serve the frontend from this server (same origin, as in production), clone the
+frontend repo next to `src/` as `frontend/` and start with `STATIC_DIR=frontend npm run dev`.
+
+## Project structure
+
+```
+src/
+  models/          User, Note, Post — schemas + every schema.index()
+  services/        aggregations.js — Scenario 1 and Scenario 2 pipelines
+  routes/          auth, notes, posts, users (aggregation endpoints), admin
+  middleware/      JWT auth + role check, error handler
+  utils/http.js    pagination, ObjectId validation, body whitelisting
+scripts/createAdmin.js
+Dockerfile, compose.yaml, deploy/   self-hosted deployment
+```
+
 ## Security
 
-- Passwords are hashed with **bcrypt** (cost 12) in a `pre('save')` hook. The password field is `select: false` and is removed from every JSON response.
+- Passwords are hashed with **bcrypt** (cost 12): in a `pre('save')` hook on create, and in `User.prepareUpdate()` on updates. The password field is `select: false` and is removed from every JSON response.
+- User updates are a single atomic `findByIdAndUpdate({ $set })` (with validators), not load + `save()`, so concurrent edits of the same user can't fail with a Mongoose `VersionError`.
 - **JWT** (HS256, algorithm pinned on verify) is sent as `Authorization: Bearer <token>`. On every request the user is loaded again, so a deleted user or a changed role takes effect immediately.
 - Request bodies are whitelisted (`pick`), so a client cannot send fields such as `role` or `owner` itself.
 - A user can only read or write notes where `owner = self`. An admin can **view** all notes but can only modify their own.
@@ -136,11 +160,45 @@ condition and the sort are both served by the compound index, and pagination hap
 lookup, so the API never loads all of a user's posts. The pipeline also returns 404 when the
 user does not exist.
 
-## Deploy (Render)
+## Deployment
 
-1. Create a free **MongoDB Atlas** cluster and copy its connection string. Under Network Access, allow `0.0.0.0/0` so Render can connect.
-2. On Render, create a **New Web Service** from this repo. Use `npm install` as the build command and `npm start` as the start command.
-3. Set these environment variables: `MONGODB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN=1d`, `CORS_ORIGIN=<frontend URL>`.
-4. Create the admin once from your machine: put the Atlas `MONGODB_URI` in `.env`, then run `npm run create-admin`.
+The live app runs on a Linux VPS with Docker, as **one container** (`secure-notes-api`): the
+Node API serves the REST endpoints and, because `STATIC_DIR` is set, the frontend's static files
+on the same origin. The database is **MongoDB Atlas**, so no database container runs on the server.
+
+```
+/opt/secure-notes/            <- this repo (git clone)
+/opt/secure-notes/frontend/   <- frontend repo (git clone, ignored by this repo)
+/opt/secure-notes/.env        <- secrets, created on the server only
+```
+
+- `Dockerfile`: `node:22-alpine`, production deps only (`npm ci --omit=dev`), runs as the non-root `node` user, with a `/health` healthcheck.
+- `compose.yaml`: publishes host port `8096`, mounts `frontend/` read-only, and limits memory to 256 MB.
+- `deploy/web-config.js` is mounted over the frontend's `config.js` and sets `API_URL = ''`, so the browser calls `/api/...` on the same origin. Because of that, CORS is not needed in production.
+
+Environment variables (`.env`): `MONGODB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CORS_ORIGIN`.
+
+### First deploy
+
+```bash
+git clone https://github.com/fayjur0001/secure-note-taking-backend.git /opt/secure-notes
+git clone https://github.com/fayjur0001/secure-note-taking-frontend.git /opt/secure-notes/frontend
+# create /opt/secure-notes/.env (chmod 600)
+docker compose -p secure-notes -f /opt/secure-notes/compose.yaml build
+docker compose -p secure-notes -f /opt/secure-notes/compose.yaml up -d
+```
+
+The first admin was created once with `npm run create-admin`, pointed at the same Atlas database.
+
+### Redeploy
+
+```bash
+tar czf /root/secure-notes-backup-$(date +%F-%H%M).tgz -C /opt/secure-notes .
+cd /opt/secure-notes && git pull && git -C frontend pull
+docker compose -p secure-notes -f /opt/secure-notes/compose.yaml build
+docker compose -p secure-notes -f /opt/secure-notes/compose.yaml up -d
+```
+
+A frontend-only change needs only `git -C frontend pull`, because the folder is mounted.
 
 Mongoose builds the indexes on startup (`autoIndex`).
