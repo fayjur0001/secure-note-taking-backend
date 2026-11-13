@@ -1,2 +1,4 @@
 node_modules/
 .env
+# self-hosted deploy clones the frontend repo here
+frontend/
